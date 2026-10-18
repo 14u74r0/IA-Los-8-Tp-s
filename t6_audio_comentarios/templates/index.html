@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% set usa_ollama = true %}
+{% block title %}T6 · Comentarios en audio{% endblock %}
+{% block h1 %}Comentarios de productos en audio{% endblock %}
+
+{% block content %}
+{% if estado.error %}<div class="msg err">{{ estado.error }}</div>{% endif %}
+
+<div class="grid">
+  <form id="f" class="card">
+    <h2>Nuevo comentario de voz</h2>
+    <label for="producto">Producto</label>
+    <input type="text" id="producto" name="producto" required>
+    <label for="cliente">Cliente</label>
+    <input type="text" id="cliente" name="cliente" required>
+    <label for="audio">Archivo de audio (wav, mp3, flac, ogg, m4a…)</label>
+    <input type="file" id="audio" name="audio" accept="audio/*,video/webm">
+    <div class="row" style="align-items:center">
+      <button id="rec" type="button" class="secondary">● Grabar con el micrófono</button>
+      <span id="rec-info" class="muted"></span>
+    </div>
+    <button id="btn" type="submit">Transcribir y analizar</button>
+    <p class="muted" style="font-size:13px">Whisper: <code>{{ estado.modelo }}</code> en <b>{{ estado.dispositivo }}</b> ·
+      <span id="carga">{% if estado.listo %}listo{% else %}<span class="spinner"></span>cargando (la primera vez se descarga)…{% endif %}</span><br>
+      Los formatos m4a y la grabación del navegador necesitan <code>ffmpeg</code> instalado.</p>
+  </form>
+
+  <div class="card">
+    <h2>Último resultado</h2>
+    <div id="vacio" class="empty">Todavía no procesaste ningún audio.</div>
+    <div id="res" style="display:none">
+      <div class="muted">Transcripción</div>
+      <pre class="out" id="r-texto"></pre>
+      <p><span id="r-badge" class="badge"></span> <span id="r-motivo" class="muted"></span></p>
+      <p class="muted" id="r-meta"></p>
+    </div>
+    <div id="error" class="msg err" style="display:none; margin:12px 0 0"></div>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="s-total">0</b><small>comentarios</small></div>
+  <div class="stat"><b id="s-pos">0</b><small>positivos (like)</small></div>
+  <div class="stat"><b id="s-neg">0</b><small>negativos (dislike)</small></div>
+  <div class="stat"><b id="s-neu">0</b><small>neutros</small></div>
+</div>
+
+<div class="card">
+  <h2>Resultados guardados</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Producto</th><th>Cliente</th><th>Transcripción</th><th>Sentimiento</th><th>Like</th><th>Dislike</th><th>Audio</th><th></th></tr></thead>
+      <tbody id="filas"></tbody>
+    </table>
+  </div>
+  <p id="sin-filas" class="empty" style="display:none">Sin registros todavía.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('f'), btn = document.getElementById('btn');
+  let grabado = null, mediaRec = null, trozos = [];
+
+  async function cargarTabla() {
+    const d = await (await fetch('/api/comentarios')).json();
+    document.getElementById('s-total').textContent = d.stats.total;
+    document.getElementById('s-pos').textContent = d.stats.positivos;
+    document.getElementById('s-neg').textContent = d.stats.negativos;
+    document.getElementById('s-neu').textContent = d.stats.neutros;
+    document.getElementById('sin-filas').style.display = d.filas.length ? 'none' : 'block';
+    document.getElementById('filas').innerHTML = d.filas.map(f => `
+      <tr><td>${esc(f.producto)}</td><td>${esc(f.cliente)}</td><td>${esc(f.comentario)}</td>
+      <td><span class="badge ${f.sentimiento}">${f.sentimiento}</span></td><td>${f.likes}</td><td>${f.dislikes}</td>
+      <td class="muted">${esc(f.archivo || '')}</td>
+      <td><button class="link" onclick="borrar(${f.id})">borrar</button></td></tr>`).join('');
+  }
+  async function borrar(id) { await fetch('/api/borrar/' + id, { method: 'POST' }); cargarTabla(); }
+
+  // Grabación desde el micrófono
+  document.getElementById('rec').addEventListener('click', async (e) => {
+    const b = e.currentTarget, info = document.getElementById('rec-info');
+    if (mediaRec && mediaRec.state === 'recording') { mediaRec.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      trozos = []; mediaRec = new MediaRecorder(stream);
+      mediaRec.ondataavailable = ev => trozos.push(ev.data);
+      mediaRec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        grabado = new Blob(trozos, { type: mediaRec.mimeType });
+        b.textContent = '● Grabar de nuevo'; info.textContent = 'Grabación lista (' + (grabado.size / 1024).toFixed(0) + ' KB)';
+      };
+      mediaRec.start(); b.textContent = '■ Detener'; info.textContent = 'Grabando…'; grabado = null;
+    } catch (err) { info.textContent = 'No se pudo acceder al micrófono: ' + err.message; }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    if (grabado && !document.getElementById('audio').files.length) fd.set('audio', grabado, 'grabacion.webm');
+    if (!(fd.get('audio') && fd.get('audio').size)) { mostrarError('Subí un archivo de audio o grabá uno.'); return; }
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Procesando…';
+    document.getElementById('error').style.display = 'none';
+    try {
+      const d = await enviarJSON('/api/analizar-audio', fd);
+      document.getElementById('vacio').style.display = 'none';
+      document.getElementById('res').style.display = 'block';
+      document.getElementById('r-texto').textContent = d.transcripcion.texto;
+      const b = document.getElementById('r-badge'); b.textContent = d.analisis.sentimiento; b.className = 'badge ' + d.analisis.sentimiento;
+      document.getElementById('r-motivo').textContent = d.analisis.motivo;
+      document.getElementById('r-meta').textContent = 'Whisper (' + d.transcripcion.dispositivo + '): ' + d.transcripcion.segundos + ' s';
+      document.getElementById('carga').textContent = 'listo';
+      cargarTabla();
+    } catch (err) { mostrarError(err.message); }
+    finally { btn.disabled = false; btn.textContent = 'Transcribir y analizar'; }
+  });
+  function mostrarError(m) { const x = document.getElementById('error'); x.textContent = m; x.style.display = 'block'; }
+  cargarTabla();
+</script>
+{% endblock %}

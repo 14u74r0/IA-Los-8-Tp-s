@@ -1,0 +1,9 @@
+# Librerías para los trabajos con modelos de Hugging Face, audio y PDF.
+# Instalar DESPUÉS de requirements-torch.txt (para que PyTorch quede con CUDA).
+transformers
+sentencepiece
+protobuf
+numpy
+imageio-ffmpeg
+pymupdf
+pillow

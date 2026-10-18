@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}T4 · Sentimientos con Transformers{% endblock %}
+{% block h1 %}Análisis de sentimientos con Transformers{% endblock %}
+
+{% block content %}
+{% if estado.error %}<div class="msg err">{{ estado.error }}</div>{% endif %}
+
+<form id="f" class="card">
+  <div class="row">
+    <div style="flex: 2; min-width: 260px">
+      <label for="texto">Textos (uno por línea)</label>
+      <textarea id="texto" name="texto" placeholder="Me encantó, llegó rapidísimo&#10;El producto vino roto y nadie me respondió"></textarea>
+    </div>
+    <div>
+      <label for="archivo">…o un archivo .txt / .csv</label>
+      <input type="file" id="archivo" name="archivo" accept=".txt,.csv,text/plain">
+      <p class="muted" style="font-size:13px">Modelo: <code>{{ estado.modelo }}</code><br>
+        Dispositivo: <b>{{ estado.dispositivo }}</b><br>
+        <span id="carga">{% if estado.listo %}Modelo listo.{% else %}<span class="spinner"></span>Cargando modelo (la primera vez se descarga)…{% endif %}</span></p>
+    </div>
+  </div>
+  <button id="btn" type="submit">Analizar</button>
+</form>
+
+<div id="error" class="msg err" style="display:none"></div>
+
+<div id="resultado" style="display:none">
+  <div class="stats">
+    <div class="stat"><b id="s-total">0</b><small>textos</small></div>
+    <div class="stat"><b id="s-pos">0</b><small>positivos</small></div>
+    <div class="stat"><b id="s-neu">0</b><small>neutros</small></div>
+    <div class="stat"><b id="s-neg">0</b><small>negativos</small></div>
+    <div class="stat"><b id="s-seg">0</b><small id="s-info">segundos</small></div>
+  </div>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center">
+      <h2 style="margin:0">Predicciones</h2>
+      <button class="secondary" id="csv" type="button" style="margin:0">Descargar CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Texto</th><th>Sentimiento</th><th>Confianza</th><th>Positivo</th><th>Neutro</th><th>Negativo</th></tr></thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('f'), btn = document.getElementById('btn');
+  let ultimo = [];
+  const pct = v => (v * 100).toFixed(1) + '%';
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Analizando…';
+    document.getElementById('error').style.display = 'none';
+    try {
+      const data = await enviarJSON('/api/predecir', new FormData(form));
+      ultimo = data.resultados;
+      const c = { positivo: 0, neutro: 0, negativo: 0 };
+      data.resultados.forEach(r => c[r.sentimiento]++);
+      document.getElementById('s-total').textContent = data.resultados.length;
+      document.getElementById('s-pos').textContent = c.positivo;
+      document.getElementById('s-neu').textContent = c.neutro;
+      document.getElementById('s-neg').textContent = c.negativo;
+      document.getElementById('s-seg').textContent = data.segundos;
+      document.getElementById('s-info').textContent = 'segundos en ' + data.dispositivo;
+      document.getElementById('filas').innerHTML = data.resultados.map(r => `
+        <tr>
+          <td>${esc(r.texto)}</td>
+          <td><span class="badge ${r.sentimiento}">${r.sentimiento}</span></td>
+          <td style="min-width:110px">${pct(r.confianza)}<div class="bar"><span style="width:${r.confianza * 100}%"></span></div></td>
+          <td>${pct(r.probabilidades.positivo)}</td><td>${pct(r.probabilidades.neutro)}</td><td>${pct(r.probabilidades.negativo)}</td>
+        </tr>`).join('');
+      document.getElementById('resultado').style.display = 'block';
+      document.getElementById('carga').textContent = 'Modelo listo.';
+    } catch (err) {
+      const box = document.getElementById('error'); box.textContent = err.message; box.style.display = 'block';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Analizar';
+    }
+  });
+
+  document.getElementById('csv').addEventListener('click', () => {
+    const q = s => '"' + String(s).replaceAll('"', '""') + '"';
+    const lineas = ['texto,sentimiento,confianza,positivo,neutro,negativo'].concat(ultimo.map(r =>
+      [q(r.texto), r.sentimiento, r.confianza, r.probabilidades.positivo, r.probabilidades.neutro, r.probabilidades.negativo].join(',')));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + lineas.join('\n')], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'sentimientos.csv'; a.click();
+  });
+
+  // Mientras el modelo carga, preguntar el estado cada 2 s.
+  (async function esperar() {
+    const el = document.getElementById('carga');
+    if (el.textContent.startsWith('Modelo listo')) return;
+    try {
+      const s = await (await fetch('/api/estado')).json();
+      if (s.listo) { el.textContent = 'Modelo listo.'; return; }
+      if (s.error) { el.textContent = 'Error al cargar el modelo.'; return; }
+    } catch (e) {}
+    setTimeout(esperar, 2000);
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+# entornos y configuración local de cada máquina
+.venv/
+venv/
+.env
+__pycache__/
+*.pyc
+
+# datos y descargas pesadas (datasets, caché de modelos, base de datos)
+data/
+.hf-cache/
+
+# editores / sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Los pesos entrenados chicos van en weights/ y SÍ se suben (si pasan ~50 MB, usar Git LFS).

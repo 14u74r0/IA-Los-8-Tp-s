@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% set usa_ollama = true %}
+{% block title %}T8 · PDF{% endblock %}
+{% block h1 %}Resumen de documentos PDF{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Cargar PDFs</h2>
+  <form id="f" class="row" style="align-items:end">
+    <div><label for="pdfs">Uno o varios archivos PDF</label>
+      <input type="file" id="pdfs" accept="application/pdf,.pdf" multiple required></div>
+    <div style="flex:0"><button id="btn" type="submit">Resumir y guardar</button></div>
+  </form>
+  <p class="muted" style="font-size:13px">Se extrae el texto con PyMuPDF y Llama lo resume en tu equipo. Los documentos largos se resumen por partes. Los PDF escaneados (imágenes) no tienen texto y no se pueden resumir sin OCR.</p>
+  <div id="prog" class="muted" style="display:none"></div>
+  <div id="errores"></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="s-total">0</b><small>PDFs resumidos</small></div>
+  <div class="stat"><b id="s-pag">0</b><small>páginas procesadas</small></div>
+</div>
+
+<div class="card">
+  <h2>Tabla <code>pdfs</code></h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Archivo</th><th>Resumen</th><th>Págs.</th><th>Fecha</th><th></th></tr></thead>
+      <tbody id="filas"></tbody>
+    </table>
+  </div>
+  <p id="vacio" class="empty">Todavía no hay PDFs resumidos.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  async function cargar() {
+    const filas = await (await fetch('/api/pdfs')).json();
+    $('s-total').textContent = filas.length;
+    $('s-pag').textContent = filas.reduce((a, f) => a + (f.paginas || 0), 0);
+    $('vacio').style.display = filas.length ? 'none' : 'block';
+    $('filas').innerHTML = filas.map(f => `
+      <tr>
+        <td style="min-width:140px"><b>${esc(f.nombre_archivo)}</b>${f.parcial ? '<br><span class="badge neutro" title="El documento era muy largo: se resumió una muestra repartida de todo el texto">resumen parcial</span>' : ''}</td>
+        <td style="min-width:320px">${esc(f.resumen)}</td>
+        <td>${f.paginas ?? ''}</td>
+        <td class="muted" style="white-space:nowrap">${esc(f.creado_en)}</td>
+        <td><button class="link" onclick="borrar(${f.id})">borrar</button></td>
+      </tr>`).join('');
+  }
+  async function borrar(id) { await fetch('/api/borrar/' + id, { method: 'POST' }); cargar(); }
+
+  $('f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const archivos = [...$('pdfs').files], btn = $('btn'), errores = $('errores');
+    errores.innerHTML = ''; btn.disabled = true;
+    for (let i = 0; i < archivos.length; i++) {
+      $('prog').style.display = 'block';
+      $('prog').innerHTML = `<span class="spinner"></span>Resumiendo ${i + 1} de ${archivos.length}: ${esc(archivos[i].name)}…`;
+      const fd = new FormData(); fd.set('pdf', archivos[i]);
+      try { await enviarJSON('/api/procesar', fd); }
+      catch (err) { errores.innerHTML += `<div class="msg err">${esc(archivos[i].name)}: ${esc(err.message)}</div>`; }
+      cargar();
+    }
+    $('prog').style.display = 'none'; btn.disabled = false; $('pdfs').value = '';
+  });
+  cargar();
+</script>
+{% endblock %}

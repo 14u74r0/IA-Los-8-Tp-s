@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set usa_ollama = true %}
+{% set usa_vision = true %}
+{% block title %}T5 · Animales{% endblock %}
+{% block h1 %}Análisis de fotografías de animales{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Cargar fotografías</h2>
+  <form id="f" class="row" style="align-items:end">
+    <div><label for="fotos">Una o varias fotos (jpg, png, webp…)</label>
+      <input type="file" id="fotos" accept="image/*" multiple required></div>
+    <div style="flex:0"><button id="btn" type="submit">Analizar y guardar</button></div>
+  </form>
+  <p class="muted" style="font-size:13px">Clasificador PyTorch (EfficientNet) en <b>{{ dispositivo }}</b> + modelo de visión de Ollama para color, tamaño, hábitat y dieta.
+    La primera vez se descargan los pesos del clasificador (~21 MB). Si no tenés el modelo de visión: <code>ollama pull {{ ollama_vision_model }}</code>.</p>
+  <div id="prog" class="muted" style="display:none"></div>
+  <div id="errores"></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="s-total">0</b><small>animales guardados</small></div>
+  <div class="stat"><b id="s-esp">0</b><small>especies distintas</small></div>
+</div>
+
+<div class="card">
+  <h2>Tabla <code>animales</code></h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Foto</th><th>Especie</th><th>Clasificador (ImageNet)</th><th>Color</th><th>Tamaño</th><th>Hábitat</th><th>Dieta</th><th>Descripción</th><th></th></tr></thead>
+      <tbody id="filas"></tbody>
+    </table>
+  </div>
+  <p id="vacio" class="empty">Todavía no hay fotos analizadas.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const $ = (id) => document.getElementById(id);
+  const v = (x) => (x && x !== '-') ? esc(x) : '<span class="muted">–</span>';
+
+  async function cargar() {
+    const filas = await (await fetch('/api/animales')).json();
+    $('s-total').textContent = filas.length;
+    $('s-esp').textContent = new Set(filas.map(f => (f.especie || '').toLowerCase()).filter(Boolean)).size;
+    $('vacio').style.display = filas.length ? 'none' : 'block';
+    $('filas').innerHTML = filas.map(f => `
+      <tr>
+        <td><img src="/imagen/${f.id}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px"></td>
+        <td><b>${v(f.especie)}</b>${f.es_animal ? '' : '<br><span class="badge neutro">no parece un animal</span>'}</td>
+        <td>${f.categoria_imagenet ? esc(f.categoria_imagenet) + '<br><span class="muted">' + (f.confianza * 100).toFixed(1) + '%</span>' : '<span class="muted">–</span>'}</td>
+        <td>${v(f.color)}</td><td>${v(f.tamano)}</td><td>${v(f.habitat)}</td><td>${v(f.dieta)}</td>
+        <td style="min-width:200px">${v(f.descripcion)}${f.notas ? '<br><span class="muted" style="font-size:12px">' + esc(f.notas) + '</span>' : ''}</td>
+        <td><button class="link" onclick="borrar(${f.id})">borrar</button></td>
+      </tr>`).join('');
+  }
+  async function borrar(id) { await fetch('/api/borrar/' + id, { method: 'POST' }); cargar(); }
+
+  $('f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const archivos = [...$('fotos').files], btn = $('btn'), errores = $('errores');
+    errores.innerHTML = ''; btn.disabled = true;
+    for (let i = 0; i < archivos.length; i++) {
+      $('prog').style.display = 'block';
+      $('prog').innerHTML = `<span class="spinner"></span>Analizando ${i + 1} de ${archivos.length}: ${esc(archivos[i].name)}…`;
+      const fd = new FormData(); fd.set('foto', archivos[i]);
+      try { await enviarJSON('/api/analizar', fd); }
+      catch (err) { errores.innerHTML += `<div class="msg err">${esc(archivos[i].name)}: ${esc(err.message)}</div>`; }
+      cargar();
+    }
+    $('prog').style.display = 'none'; btn.disabled = false; $('fotos').value = '';
+  });
+  cargar();
+</script>
+{% endblock %}

@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}T1 · CNN{% endblock %}
+{% block h1 %}Red neuronal convolucional (CNN){% endblock %}
+
+{% block content %}
+<div class="card" id="hw">
+  <h2>Hardware</h2>
+  <div class="stats" style="margin:0">
+    <div class="stat"><b id="hw-nombre">–</b><small id="hw-detalle">consultando…</small></div>
+    <div class="stat"><b id="hw-uso">–</b><small>uso de GPU</small><div class="bar gpu"><span id="hw-uso-bar" style="width:0"></span></div></div>
+    <div class="stat"><b id="hw-vram">–</b><small>VRAM usada</small><div class="bar gpu"><span id="hw-vram-bar" style="width:0"></span></div></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>1 · Datos</h2>
+    <label><input type="radio" name="dataset" value="cifar10" checked> CIFAR-10 (60.000 imágenes, 10 clases; se descarga solo la primera vez, ~170 MB)</label>
+    <label><input type="radio" name="dataset" value="propio"> Mi dataset (las imágenes que cargo abajo)</label>
+
+    <h3>Cargar imágenes para mi dataset</h3>
+    <form id="f-subir">
+      <label for="clase">Clase (ej: gato)</label>
+      <input type="text" id="clase" name="clase" required>
+      <label for="imagenes">Imágenes de esa clase</label>
+      <input type="file" id="imagenes" name="imagenes" accept="image/*" multiple required>
+      <button type="submit" class="secondary">Cargar imágenes</button>
+    </form>
+    <p id="msg-subir" class="muted"></p>
+    <div id="clases-propias"></div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Entrenamiento</h2>
+    <div class="row">
+      <div><label for="epocas">Épocas</label><input type="number" id="epocas" value="10" min="1" max="200"></div>
+      <div><label for="batch">Batch</label><input type="number" id="batch" value="256" min="8" max="4096"></div>
+      <div><label for="lr">Learning rate</label><input type="number" id="lr" value="0.003" step="0.0005" min="0.0001" max="1"></div>
+    </div>
+    <div class="row">
+      <div><label for="dispositivo">Dispositivo</label>
+        <select id="dispositivo"><option value="auto">Automático (GPU si hay)</option><option value="cuda">GPU (CUDA)</option><option value="cpu">CPU</option></select></div>
+      <div><label>&nbsp;</label><label style="margin:8px 0 0"><input type="checkbox" id="amp"> Precisión mixta (BF16, Tensor Cores)</label></div>
+    </div>
+    <div class="row" style="gap:8px">
+      <button id="btn-entrenar" type="button">Entrenar</button>
+      <button id="btn-detener" type="button" class="secondary" disabled>Detener</button>
+    </div>
+    <div id="progreso" style="display:none; margin-top:14px">
+      <div class="muted" id="prog-texto"></div>
+      <div class="bar" style="margin-top:6px"><span id="prog-bar" style="width:0"></span></div>
+    </div>
+    <div id="err-entrenar" class="msg err" style="display:none; margin-top:12px"></div>
+    <div class="table-wrap" id="hist-wrap" style="display:none; margin-top:12px">
+      <table><thead><tr><th>Época</th><th>Loss</th><th>Acc. train</th><th>Acc. test</th><th>Seg.</th><th>Img/s</th></tr></thead><tbody id="hist"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>3 · Predicción</h2>
+  <p id="modelo-info" class="muted">Todavía no hay un modelo entrenado.</p>
+  <form id="f-pred" class="row" style="align-items:end">
+    <div><label for="imagen">Imagen a clasificar</label><input type="file" id="imagen" name="imagen" accept="image/*" required></div>
+    <div style="flex:0"><button type="submit">Predecir</button></div>
+  </form>
+  <div id="pred" style="display:none; margin-top:14px" class="row">
+    <div style="flex:0 0 220px"><img id="pred-img" class="preview" alt="imagen cargada"></div>
+    <div>
+      <div id="pred-lista"></div>
+      <p class="muted" id="pred-meta"></p>
+    </div>
+  </div>
+  <div id="err-pred" class="msg err" style="display:none; margin-top:12px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const $ = (id) => document.getElementById(id);
+  let ultimoEstado = null;
+
+  function pct(v) { return (v * 100).toFixed(1) + '%'; }
+
+  function pintarHardware(d) {
+    const t = d.torch || {}, g = d.gpu || {};
+    if (t.cuda) {
+      $('hw-nombre').textContent = t.nombre;
+      $('hw-detalle').textContent = `${t.nucleos_cuda.toLocaleString('es')} núcleos CUDA · ${t.sms} SMs · ${t.vram_gb} GB · PyTorch ${t.torch} (CUDA ${t.cuda_build})`;
+    } else {
+      $('hw-nombre').textContent = 'Solo CPU';
+      $('hw-detalle').textContent = t.torch ? `PyTorch ${t.torch} no ve CUDA` : 'PyTorch no instalado';
+    }
+    if (g.disponible) {
+      $('hw-uso').textContent = g.uso_pct + '%'; $('hw-uso-bar').style.width = g.uso_pct + '%';
+      const vp = 100 * g.vram_usada_mb / g.vram_total_mb;
+      $('hw-vram').textContent = (g.vram_usada_mb / 1024).toFixed(1) + ' / ' + (g.vram_total_mb / 1024).toFixed(0) + ' GB';
+      $('hw-vram-bar').style.width = vp + '%';
+    }
+  }
+
+  function pintarClases(clases) {
+    const nombres = Object.keys(clases);
+    $('clases-propias').innerHTML = nombres.length
+      ? '<table><tbody>' + nombres.map(c => `<tr><td>${esc(c)}</td><td>${clases[c]} imágenes</td>
+          <td><button class="link" onclick="borrarClase('${esc(c).replace(/'/g, '')}')">borrar</button></td></tr>`).join('') + '</tbody></table>'
+      : '<p class="empty">Todavía no cargaste imágenes propias.</p>';
+  }
+
+  function pintarJob(j) {
+    const corriendo = j.corriendo;
+    $('btn-entrenar').disabled = corriendo; $('btn-detener').disabled = !corriendo;
+    const visible = j.estado && j.estado !== 'inactivo';
+    $('progreso').style.display = visible ? 'block' : 'none';
+    if (visible) {
+      const p = j.pasos_total ? Math.min(100, 100 * (j.paso || 0) / j.pasos_total) : 0;
+      $('prog-bar').style.width = p + '%';
+      let txt = j.estado + (j.dispositivo ? ` · ${j.dispositivo}${j.amp ? ' (BF16)' : ''}` : '');
+      if (j.loss_actual != null && corriendo) txt += ` · loss ${j.loss_actual}`;
+      if (j.transcurrido != null) txt += ` · ${j.transcurrido} s`;
+      if (j.guardado) txt += ` · modelo guardado (acc. test ${pct(j.acc_final)})`;
+      $('prog-texto').innerHTML = (corriendo ? '<span class="spinner"></span>' : '') + esc(txt);
+    }
+    const err = $('err-entrenar');
+    err.style.display = j.error ? 'block' : 'none'; err.textContent = j.error || '';
+    const h = j.historial || [];
+    $('hist-wrap').style.display = h.length ? 'block' : 'none';
+    $('hist').innerHTML = h.map(f => `<tr><td>${f.epoca}</td><td>${f.loss}</td><td>${pct(f.acc_train)}</td><td>${pct(f.acc_test)}</td><td>${f.segundos}</td><td>${f.img_s.toLocaleString('es')}</td></tr>`).join('');
+  }
+
+  function pintarModelo(m) {
+    $('modelo-info').textContent = m
+      ? `Modelo entrenado con ${m.dataset} · ${m.epocas} épocas · acc. test ${pct(m.acc)} · clases: ${m.clases.join(', ')}`
+      : 'Todavía no hay un modelo entrenado.';
+  }
+
+  async function refrescar() {
+    try {
+      const d = await (await fetch('/api/estado')).json();
+      if (d.error) { $('hw-detalle').textContent = d.error; return; }
+      pintarHardware(d); pintarClases(d.clases_propias); pintarJob(d.job); pintarModelo(d.modelo);
+    } catch (e) { /* servidor reiniciando */ }
+  }
+  setInterval(refrescar, 1000); refrescar();
+
+  $('btn-entrenar').addEventListener('click', async () => {
+    const fd = new FormData();
+    fd.set('dataset', document.querySelector('input[name=dataset]:checked').value);
+    for (const k of ['epocas', 'batch', 'lr', 'dispositivo']) fd.set(k, $(k).value);
+    fd.set('amp', $('amp').checked ? 'true' : 'false');
+    try { await enviarJSON('/api/entrenar', fd); } catch (e) { const x = $('err-entrenar'); x.textContent = e.message; x.style.display = 'block'; }
+    refrescar();
+  });
+  $('btn-detener').addEventListener('click', () => fetch('/api/detener', { method: 'POST' }));
+
+  $('f-subir').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.submitter; btn.disabled = true;
+    try {
+      const d = await enviarJSON('/api/subir', new FormData(e.target));
+      $('msg-subir').textContent = `Se guardaron ${d.guardadas} imágenes` + (d.rechazadas.length ? ` (${d.rechazadas.length} no eran imágenes válidas)` : '') + '.';
+      e.target.reset(); pintarClases(d.clases);
+    } catch (err) { $('msg-subir').textContent = err.message; }
+    btn.disabled = false;
+  });
+  async function borrarClase(c) {
+    const fd = new FormData(); fd.set('clase', c);
+    const d = await enviarJSON('/api/borrar-clase', fd); pintarClases(d.clases);
+  }
+
+  $('f-pred').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('err-pred'); err.style.display = 'none';
+    const fd = new FormData(e.target), archivo = fd.get('imagen');
+    try {
+      const d = await enviarJSON('/api/predecir', fd);
+      $('pred').style.display = 'flex';
+      $('pred-img').src = URL.createObjectURL(archivo);
+      $('pred-lista').innerHTML = d.predicciones.map(p => `
+        <div style="margin-bottom:8px"><b>${esc(p.clase)}</b> <span class="muted">${pct(p.prob)}</span>
+        <div class="bar"><span style="width:${p.prob * 100}%"></span></div></div>`).join('');
+      $('pred-meta').textContent = `${d.ms} ms en ${d.dispositivo} · entrenado con ${d.entrenado_con}`;
+    } catch (ex) { err.textContent = ex.message; err.style.display = 'block'; }
+  });
+</script>
+{% endblock %}

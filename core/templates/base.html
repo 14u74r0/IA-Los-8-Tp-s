@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}IA{% endblock %}</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #667085; --line: #e4e7ec;
+    --accent: #2f6fed; --accent-soft: #e6eefc;
+    --pos: #137a4b; --pos-bg: #e3f6ec; --neg: #b42318; --neg-bg: #fdeceb; --neu: #55607a; --neu-bg: #edf0f5;
+    --warn: #8a5a00; --warn-bg: #fdf3dc; --gpu: #5b9a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11151c; --card: #1a202b; --text: #e8ecf3; --muted: #9aa4b5; --line: #2a3242;
+      --accent: #6b9bff; --accent-soft: #1f2c47;
+      --pos: #5bd69a; --pos-bg: #14352a; --neg: #ff8f85; --neg-bg: #3a1c1a; --neu: #aab4c8; --neu-bg: #252d3b;
+      --warn: #f3c969; --warn-bg: #3a2f14; --gpu: #9bd34a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 56px; }
+  header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: baseline; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 14px; margin: 16px 0 8px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; background: var(--neg); }
+  .dot.on { background: var(--pos); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid.three { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 800px) { .grid, .grid.three { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .grid > .card { margin-bottom: 0; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=number], textarea, select, input[type=file] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  textarea { min-height: 110px; resize: vertical; }
+  button, .btn { margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  [data-theme] button { color: #fff; }
+  button.secondary { background: var(--accent-soft); color: var(--accent); }
+  button.link { background: none; color: var(--muted); padding: 0; margin: 0; font-weight: 400; }
+  button:disabled { opacity: .55; cursor: wait; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 120px; }
+  .msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  .msg.err { background: var(--neg-bg); color: var(--neg); }
+  .msg.ok { background: var(--pos-bg); color: var(--pos); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn); }
+  .stats { display: flex; gap: 12px; margin: 0 0 16px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 110px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 24px; }
+  .stat small { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  .table-wrap { overflow-x: auto; }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .positivo { background: var(--pos-bg); color: var(--pos); }
+  .negativo { background: var(--neg-bg); color: var(--neg); }
+  .neutro { background: var(--neu-bg); color: var(--neu); }
+  .bar { height: 8px; background: var(--neu-bg); border-radius: 999px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
+  .bar.gpu > span { background: var(--gpu); }
+  .empty { color: var(--muted); padding: 8px 0; }
+  .muted { color: var(--muted); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  pre.out { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 6px 0 0; font: inherit; }
+  img.preview { max-width: 100%; max-height: 280px; border-radius: 8px; border: 1px solid var(--line); }
+  .imgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .imgs img { width: 100%; image-rendering: pixelated; border-radius: 6px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tabs button { margin: 0; background: var(--accent-soft); color: var(--accent); }
+  .tabs button.on { background: var(--accent); color: #fff; }
+  code { background: var(--neu-bg); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  {% set gpu = gpu_info() %}
+  <header>
+    <h1>{% block h1 %}{% endblock %}</h1>
+    <div class="meta">
+      {% if usa_ollama %}
+        <span class="dot {{ 'on' if ollama_up() }}"></span>Ollama {{ 'activo' if ollama_up() else 'sin conexión' }}
+        · <b>{{ ollama_vision_model if usa_vision else ollama_model }}</b> ·
+      {% endif %}
+      {{ gpu.nombre if gpu.disponible else 'sin GPU NVIDIA detectada' }}
+    </div>
+  </header>
+
+  {% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+  {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+
+  {% block content %}{% endblock %}
+</main>
+<script>
+  // Ayuda común: envía un formulario con fetch y devuelve el JSON (o lanza el error del servidor).
+  async function enviarJSON(url, formData) {
+    const r = await fetch(url, { method: 'POST', body: formData });
+    let data = null;
+    try { data = await r.json(); } catch (e) { /* respuesta sin JSON */ }
+    if (!r.ok) throw new Error((data && (data.error || data.detail)) || ('Error ' + r.status));
+    return data;
+  }
+  function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

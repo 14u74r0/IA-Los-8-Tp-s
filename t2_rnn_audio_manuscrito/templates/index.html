@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% set usa_ollama = true %}
+{% block title %}T2 · Audio y manuscrito{% endblock %}
+{% block h1 %}Audio y manuscrito a texto, con traducción{% endblock %}
+
+{% block content %}
+<div class="tabs">
+  <button type="button" class="on" id="tab-audio">Audio</button>
+  <button type="button" id="tab-img">Imagen manuscrita</button>
+</div>
+
+<div class="grid">
+  <div>
+    <form id="f-audio" class="card">
+      <h2>Audio a texto</h2>
+      <label for="audio">Archivo de audio (wav, mp3, flac, ogg, m4a…)</label>
+      <input type="file" id="audio" name="audio" accept="audio/*" required>
+      <div class="row">
+        <div><label for="idioma">Idioma hablado</label>
+          <select id="idioma" name="idioma">{% for k, v in idiomas_audio.items() %}<option value="{{ k }}" {{ 'selected' if k == 'auto' }}>{{ v }}</option>{% endfor %}</select></div>
+        <div><label for="destino-a">Traducir a</label>
+          <select id="destino-a" name="destino"><option value="ninguno">No traducir</option>{% for d in destinos %}<option>{{ d }}</option>{% endfor %}</select></div>
+      </div>
+      <button type="submit">Transcribir</button>
+    </form>
+
+    <form id="f-img" class="card" style="display:none">
+      <h2>Texto manuscrito a texto</h2>
+      <label for="imagen">Foto o escaneo del manuscrito</label>
+      <input type="file" id="imagen" name="imagen" accept="image/*" required>
+      <img id="prev" class="preview" style="display:none; margin-top:10px" alt="vista previa">
+      <div class="row">
+        <div><label for="motor">Motor de lectura</label>
+          <select id="motor" name="motor">
+            <option value="trocr">TrOCR (Transformer, GPU) — renglones claros</option>
+            <option value="vision">Modelo de visión de Ollama — páginas completas</option>
+          </select></div>
+        <div><label for="destino-i">Traducir a</label>
+          <select id="destino-i" name="destino"><option value="ninguno">No traducir</option>{% for d in destinos %}<option>{{ d }}</option>{% endfor %}</select></div>
+      </div>
+      <button type="submit">Leer</button>
+    </form>
+    <p class="muted" style="font-size:13px">Whisper y TrOCR son Transformers codificador-decodificador (la evolución de las RNN para secuencias).
+      La primera vez de cada modelo tarda porque se descarga.</p>
+  </div>
+
+  <div class="card">
+    <h2>Resultado</h2>
+    <div id="vacio" class="empty">Todavía no procesaste nada.</div>
+    <div id="res" style="display:none">
+      <div class="muted">Texto reconocido</div>
+      <pre class="out" id="r-texto"></pre>
+      <div id="bloque-trad" style="display:none">
+        <div class="muted" style="margin-top:12px">Traducción (<span id="r-destino"></span>)</div>
+        <pre class="out" id="r-trad"></pre>
+      </div>
+      <p class="muted" id="r-meta" style="margin-top:12px"></p>
+    </div>
+    <div id="error" class="msg err" style="display:none; margin:12px 0 0"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const fAudio = document.getElementById('f-audio'), fImg = document.getElementById('f-img');
+  const tA = document.getElementById('tab-audio'), tI = document.getElementById('tab-img');
+  tA.onclick = () => { fAudio.style.display = ''; fImg.style.display = 'none'; tA.classList.add('on'); tI.classList.remove('on'); };
+  tI.onclick = () => { fImg.style.display = ''; fAudio.style.display = 'none'; tI.classList.add('on'); tA.classList.remove('on'); };
+  document.getElementById('imagen').addEventListener('change', e => {
+    const f = e.target.files[0], p = document.getElementById('prev');
+    if (f) { p.src = URL.createObjectURL(f); p.style.display = 'block'; }
+  });
+
+  function conectar(form, url) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector('button[type=submit]'), texto = btn.textContent;
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Procesando…';
+      document.getElementById('error').style.display = 'none';
+      try {
+        const d = await enviarJSON(url, new FormData(form));
+        document.getElementById('vacio').style.display = 'none';
+        document.getElementById('res').style.display = 'block';
+        document.getElementById('r-texto').textContent = d.texto;
+        const hayTrad = !!d.traduccion;
+        document.getElementById('bloque-trad').style.display = (hayTrad || d.traduccion_error) ? 'block' : 'none';
+        document.getElementById('r-destino').textContent = d.destino || '';
+        document.getElementById('r-trad').textContent = d.traduccion || d.traduccion_error || '';
+        document.getElementById('r-meta').textContent = d.motor + ' · ' + d.segundos + ' s' + (d.lineas ? ' · ' + d.lineas + ' renglón(es)' : '');
+      } catch (err) {
+        const x = document.getElementById('error'); x.textContent = err.message; x.style.display = 'block';
+      } finally { btn.disabled = false; btn.textContent = texto; }
+    });
+  }
+  conectar(fAudio, '/api/audio');
+  conectar(fImg, '/api/manuscrito');
+</script>
+{% endblock %}

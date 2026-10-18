@@ -1,0 +1,6 @@
+# PyTorch con CUDA. La RTX 5070 Ti (Blackwell) necesita una build CUDA 12.8 o superior.
+# Si hay una build más nueva, mirá el selector en https://pytorch.org y cambiá "cu128".
+--index-url https://download.pytorch.org/whl/cu128
+torch
+torchvision
+torchaudio
