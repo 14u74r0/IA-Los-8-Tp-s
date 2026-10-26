@@ -38,25 +38,3 @@ python run.py t3_gan          # abrí http://127.0.0.1:8000
 ```
 
 Solo corre uno por vez en el puerto 8000 (o usá `--port 8001`).
-
-## Presentación: trabajo 3 (CUDA)
-
-La pantalla muestra en vivo el uso de GPU, VRAM, temperatura y consumo. Guion sugerido:
-1. Hardware: núcleos CUDA y SMs de la GPU.
-2. Entrenar la GAN con MNIST: se ven las imágenes mejorar época a época mientras sube el uso de GPU.
-3. Generar imágenes aleatorias (la misma semilla da las mismas imágenes).
-4. Benchmark: imágenes por segundo en CPU contra GPU, y TFLOPS en FP32 contra los Tensor Cores (TF32/FP16/BF16).
-
-## Flujo escritorio a notebook
-
-```
-git add . && git commit -m "avance" && git push     # escritorio
-git pull                                            # notebook
-```
-
-El `.env`, el entorno virtual y `data/` no se suben. Los pesos entrenados chicos de `weights/` sí.
-En la notebook (6 GB de VRAM) usá `llama3.2:3b` y batch más chico si hace falta.
-
-## Estado
-
-Los 8 trabajos están implementados. Probados con modelos simulados y datos sintéticos en CPU; la ejecución real con la GPU, Whisper, TrOCR y los modelos de Ollama se valida en cada máquina.
