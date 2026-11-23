@@ -15,7 +15,6 @@ Monorepo con los 8 trabajos. Se desarrolla en el escritorio, se sube a GitHub y 
 | 7 | `t7_texto` | Texto de comentarios a tabla `comentarios` | Llama |
 | 8 | `t8_pdf` | PDF a tabla `pdfs` (resumen) | PyMuPDF + Llama |
 
-Nota sobre el trabajo 2: la guía dice RNN, pero Whisper y TrOCR son Transformers (los modelos que hoy hacen esto mejor). Confirmá con el profesor si lo acepta; si exige una RNN, se puede sumar un CRNN (CNN+LSTM) para el manuscrito.
 
 ## Primera vez en cada máquina
 
@@ -28,13 +27,8 @@ ollama pull llama3.1:8b                   # escritorio  (notebook: llama3.2:3b)
 ollama pull gemma3:4b                     # modelo de visión (trabajo 5)
 ```
 
-Editá `.env` con el modelo de esa máquina y verificá todo con `python scripts/check_env.py`.
-La primera vez que se usa cada modelo de Hugging Face (Whisper ~1 GB, sentimiento ~1 GB, TrOCR ~1 GB) se descarga solo; hace falta internet.
-
 ## Ejecutar un trabajo
 
 ```
 python run.py t3_gan          # abrí http://127.0.0.1:8000
 ```
-
-Solo corre uno por vez en el puerto 8000 (o usá `--port 8001`).
